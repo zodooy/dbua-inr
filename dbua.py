@@ -12,7 +12,7 @@ from utils.losses import (
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = True
 from torch.utils import data
-from scripts.inr import Model
+from utils.inr import Model
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
