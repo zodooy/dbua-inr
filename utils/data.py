@@ -2,7 +2,7 @@ from pathlib import Path
 from hdf5storage import loadmat
 from torch.utils import data
 
-N_ITERS = 50
+N_ITERS = 100
 LEARNING_RATE = 0.1
 ASSUMED_C = 1540  # [m/s]
 
@@ -26,7 +26,7 @@ LAMBDA_TV = 1e2
 NXK, NZK = 5, 5
 
 # Phase estimate patch grid size in samples
-NXP, NZP = 17, 17
+NXP, NZP = 10, 10
 PHASE_ERROR_X_MIN = -12e-3
 PHASE_ERROR_X_MAX = 12e-3
 PHASE_ERROR_Z_MIN = 0e-3

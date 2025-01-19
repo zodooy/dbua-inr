@@ -1,7 +1,7 @@
 import torch
 
 
-def time_of_flight(x0, z0, x1, z1, model, fnum: float, npts: int, Dmin: float):
+def time_of_flight(x0, z0, x1, z1, model, fnum: float, npts: int, Dmin: float, mode: int):
     # define the range of t
     t_all = torch.linspace(1, 0, npts + 1, device=x0.device)[:-1].flip(0)
 
@@ -16,7 +16,8 @@ def time_of_flight(x0, z0, x1, z1, model, fnum: float, npts: int, Dmin: float):
 
         coords = torch.stack([xt, zt], dim=3).reshape(-1, 2)
 
-        sos = model(coords).detach().reshape(xt.shape)
+        if mode == 0: sos = model(coords).reshape(xt.shape)
+        else: sos = model(coords).detach().reshape(xt.shape)
 
         return 1 / sos
 
