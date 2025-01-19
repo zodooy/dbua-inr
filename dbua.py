@@ -1,9 +1,7 @@
 import torch
 from utils.data import *
-from utils.losses import (
-    phase_error,
-    total_variation,
-)
+from utils.losses import phase_error, total_variation, speckle_brightness, lag_one_coherence, coherence_factor
+
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = True
 import numpy as np
@@ -16,7 +14,7 @@ torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = True
 from torch.utils import data
 from utils.inr import Model
-from utils.plot import imagesc
+from utils.plot import imagesc, plot_loss
 from scripts.das import das
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -78,8 +76,9 @@ def dbua(sample, loss_name):
         t = tof_patch(model)
         return func(iqdata, t - t0, t, fs, fd)
 
-    def sb_lc_cf_loss(func, model):
-        return 1 - loss_wrapper(func, model)
+    sb_loss = lambda model: 1 - loss_wrapper(speckle_brightness, model)
+    lc_loss = lambda model: 1 - torch.mean(loss_wrapper(lag_one_coherence, model))
+    cf_loss = lambda model: 1 - torch.mean(loss_wrapper(coherence_factor, model))
 
     def pe_loss(model):
         t = tof_patch(model)
@@ -92,35 +91,35 @@ def dbua(sample, loss_name):
 
     def loss(c, model):
         if loss_name == "sb":  # Speckle brightness
-            return sb_lc_cf_loss("speckle_brightness", model) + tv(c) * LAMBDA_TV
+            return sb_loss(model) + tv(c) * LAMBDA_TV
         elif loss_name == "lc":  # Lag one coherence
-            return torch.mean(sb_lc_cf_loss("lag_one_coherence", model)) + tv(c) * LAMBDA_TV
+            return lc_loss(model) + tv(c) * LAMBDA_TV
         elif loss_name == "cf":  # Coherence factor
-            return torch.mean(sb_lc_cf_loss("coherence_factor", model)) + tv(c) * LAMBDA_TV
+            return cf_loss(model) + tv(c) * LAMBDA_TV
         elif loss_name == "pe":  # Phase error
             return pe_loss(model) + tv(c) * LAMBDA_TV
         else:
             assert False
 
+    fig, _ = plt.subplots(1, 2, figsize=[9, 4])
+    # Create the image axes for plotting
+    ximm = xi[:, 0] * 1e3
+    zimm = zi[0, :] * 1e3
+    xcmm = xc * 1e3
+    zcmm = zc * 1e3
+    bdr = [-45, +5]
+    cdr = np.array([-50, +50]) + \
+          CTRUE[sample] if CTRUE[sample] > 0 else [1400, 1600]
+    cmap = "seismic" if CTRUE[sample] > 0 else "jet"
+
     if MAKE_VIDEO:
         # Create the figure writer
-        fig, _ = plt.subplots(1, 2, figsize=[9, 4])
         vobj = FFMpegWriter(fps=30)
         vobj.setup(fig, "videos/%s_opt%s.mp4" % (sample, loss_name), dpi=144)
 
-        # Create the image axes for plotting
-        ximm = xi[:, 0] * 1e3
-        zimm = zi[0, :] * 1e3
-        xcmm = xc * 1e3
-        zcmm = zc * 1e3
-        bdr = [-45, +5]
-        cdr = np.array([-50, +50]) + \
-              CTRUE[sample] if CTRUE[sample] > 0 else [1400, 1600]
-        cmap = "seismic" if CTRUE[sample] > 0 else "jet"
-
     # Create a nice figure on first call, update on subsequent calls
     @torch.no_grad()
-    def makeFigure(cimg, i, handles=None, pbar=None):
+    def makeFigure(model, i, cimg, handles=None, pbar=None):
         b = makeImage(model)
         if handles is None:
             bmax = torch.max(b)
@@ -131,15 +130,13 @@ def dbua(sample, loss_name):
         bimg = 20 * torch.log10(bimg)
         bimg = torch.reshape(bimg, (nxi, nzi)).T
         cimg = torch.reshape(cimg, (SOUND_SPEED_NXC, SOUND_SPEED_NZC)).T
-        losses = (sb_lc_cf_loss("speckle_brightness", model).item(),
-                  sb_lc_cf_loss("coherence_factor", model).item(),
-                  pe_loss(c).item(), tv(c).item() * LAMBDA_TV)
+        losses = (pe_loss(model).item(), tv(c).item() * LAMBDA_TV)
         if handles is None:
             # On the first time, create the figure
             fig.clf()
             plt.subplot(121)
             hbi = imagesc(ximm.cpu(), zimm.cpu(), bimg.cpu(), bdr, cmap="gray", interpolation="bicubic")
-            hbt = plt.title("SB: %.2f, CF: %.3f, PE: %.3f, TV: %.3f" % losses)
+            hbt = plt.title("PE: %.3f, TV: %.3f" % losses)
 
             plt.xlim(ximm[0].cpu(), ximm[-1].cpu())
             plt.ylim(zimm[-1].cpu(), zimm[0].cpu())
@@ -157,13 +154,13 @@ def dbua(sample, loss_name):
         else:
             hbi.set_data(bimg.cpu())
             hci.set_data(cimg.cpu())
-            hbt.set_text("SB: %.2f, CF: %.3f, PE: %.3f, TV: %.3f" % losses)
+            hbt.set_text("PE: %.3f, TV: %.3f" % losses)
             if CTRUE[sample] > 0:
                 hct.set_text("Iteration %d: MAE %.2f" % (i, torch.mean(torch.abs(cimg - CTRUE[sample]))))
             else:
                 hct.set_text("Iteration %d: Mean value %.2f" % (i, torch.mean(cimg)))
 
-        if pbar: pbar.set_postfix(sb=losses[0], cf=losses[1], pe=losses[2], tv=losses[3])
+        # if pbar: pbar.set_postfix(sb=losses[0], cf=losses[1], pe=losses[2], tv=losses[3])
         plt.savefig(f"scratch/{sample}.png")
 
     # Initial survey of losses vs. global sound speed
@@ -195,32 +192,40 @@ def dbua(sample, loss_name):
             scheduler1.step()
             pbar.set_postfix(loss=total_loss / len(dataloader), lr=optimizer1.param_groups[0]["lr"])
 
-
+    print("Initializing First Frame")
+    c_init = model(coords).detach().reshape(SOUND_SPEED_NXC, SOUND_SPEED_NZC)
+    handles = makeFigure(model, 0, c_init)
+    plt.savefig(f"scratch/{sample}_init.png")
     if MAKE_VIDEO:
-        handles = makeFigure(model, 0)
-        plt.savefig(f"scratch/{sample}_init.png")
         vobj.grab_frame()
 
     optimizer2 = torch.optim.Adam(params=model.parameters(), lr=0.001, amsgrad=True)
     scheduler2 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer2, T_max=200)
+    l = list()
 
     # Optimization Loop
     with tqdm(range(N_ITERS), desc="Optimization Loop", unit="iter") as pbar:
         for i in pbar:
             model.train()
             c_pre = model(coords).reshape(SOUND_SPEED_NXC, SOUND_SPEED_NZC)
+
             loss_value2 = loss(c_pre, model)
             pbar.set_postfix(loss=loss_value2.item(), lr=optimizer2.param_groups[0]["lr"])
+            l.append(loss_value2.item())
+
             optimizer2.zero_grad()
             loss_value2.backward()
             optimizer2.step()
             scheduler2.step()
+
             if MAKE_VIDEO:
-                makeFigure(c, i + 1, handles, pbar)
+                makeFigure(model, i + 1, c_pre.detach(), handles, pbar)
                 vobj.grab_frame()  # Add to video writer
 
-    if MAKE_VIDEO:  vobj.finish()  # Close video writer
-    makeFigure(c, N_ITERS)
+    if MAKE_VIDEO: vobj.finish()  # Close video writer
+    makeFigure(model, N_ITERS, c_pre.detach())
+    plt.savefig(f"scratch/{sample}_finish.png")
+    plot_loss(l, sample)
 
 
 if __name__ == "__main__":

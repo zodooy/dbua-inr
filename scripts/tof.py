@@ -16,8 +16,8 @@ def time_of_flight(x0, z0, x1, z1, model, fnum: float, npts: int, Dmin: float, m
 
         coords = torch.stack([xt, zt], dim=3).reshape(-1, 2)
 
-        if mode == 0: sos = model(coords).reshape(xt.shape)
-        else: sos = model(coords).detach().reshape(xt.shape)
+        if mode == 0: sos = model(coords).reshape(xt.shape) # optimization
+        else: sos = model(coords).detach().reshape(xt.shape) # b-mode image
 
         return 1 / sos
 
