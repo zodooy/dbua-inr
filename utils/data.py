@@ -2,9 +2,12 @@ from pathlib import Path
 from hdf5storage import loadmat
 from torch.utils import data
 
-N_ITERS = 150
+N_ITERS = 301
 LEARNING_RATE = 0.1
 ASSUMED_C = 1540  # [m/s]
+
+NPTS_IMAGE = 64
+NPTS_PATCH = 20
 
 # B-mode limits in m
 BMODE_X_MIN = -12e-3

@@ -1,7 +1,5 @@
 import torch
-
 from utils.data import denormalize
-
 
 def time_of_flight(x0, z0, x1, z1, model, fnum: float, npts: int, Dmin: float, mode: int):
     # define the range of t

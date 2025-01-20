@@ -1,7 +1,6 @@
 import torch
 from utils.data import *
 from utils.losses import phase_error, total_variation, speckle_brightness, lag_one_coherence, coherence_factor
-
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = True
 import numpy as np
@@ -63,14 +62,14 @@ def dbua(sample, loss_name):
 
     # Compute time-of-flight for each {image, patch} pixel to each element
     def tof_image(model):
-        return time_of_flight(xe, ze, xi, zi, model, fnum=0.5, npts=64, Dmin=3e-3, mode=1)
+        return time_of_flight(xe, ze, xi, zi, model, fnum=0.5, npts=NPTS_IMAGE, Dmin=3e-3, mode=1)
 
     def makeImage(model):
         t = tof_image(model)
         return torch.abs(das(iqdata, t - t0, t, fs, fd))
 
     def tof_patch(model):
-        return time_of_flight(xe, ze, xp, zp, model, fnum=0.5, npts=25, Dmin=3e-3, mode=0)
+        return time_of_flight(xe, ze, xp, zp, model, fnum=0.5, npts=NPTS_PATCH, Dmin=3e-3, mode=0)
 
     # Define loss functions
     def loss_wrapper(func, model):
@@ -229,7 +228,3 @@ def dbua(sample, loss_name):
     makeFigure(model, N_ITERS, denormalize(c_pre.detach()))
     plt.savefig(f"scratch/{sample}_finish_{time.time()}.png")
     plot_loss(l, sample)
-
-
-if __name__ == "__main__":
-    dbua(SAMPLE, LOSS)

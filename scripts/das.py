@@ -1,24 +1,8 @@
 from torch.func import vmap
-
-from utils.interpolation import *
-
+from utils.interp import *
 
 def das(iqraw, tA, tB, fs, fd, A=None, B=None, apoA=1, apoB=1, interp="cubic"):
-    """
-    Delay-and-sum IQ data according to a given time delay profile.
 
-    @param iqraw   [na, nb, nsamps]  Raw IQ data (baseband)
-    @param tA      [na, *pixdims]    Time delays to apply to dimension 0 of iq
-    @param tB      [nb, *pixdims]    Time delays to apply to dimension 1 of iq
-    @param fs      scalar            Sampling frequency to convert from time to samples
-    @param fd      scalar            Demodulation frequency (0 for RF modulated data)
-    @param A       [*na_out, na]     Linear combination of dimension 0 of iqraw
-    @param B       [*nb_out, nb]     Linear combination of dimension 1 of iqraw
-    @param apoA    [na, *pixdims]    Broadcastable apodization on dimension 0 of iq
-    @param apoB    [nb, *pixdims]    Broadcastable apodization on dimension 1 of iq
-    @param interp  string            Interpolation method to use
-    @return iqfoc  [*na_out, *nb_out, *pixel_dims]   Beamformed IQ data
-    """
     # 默认的线性组合是对所有元素求和
     if A is None:
         A = torch.ones(iqraw.shape[0], device=iqraw.device)
