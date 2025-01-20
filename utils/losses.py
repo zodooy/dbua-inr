@@ -90,7 +90,6 @@ def phase_error(iq, t_tx, t_rx, fs, fd, thresh=0.9):
     xy = torch.flip(xy, dims=(0,))  # 反对角线 -> 对角线
     xy = xy.reshape(*xy.shape[:2], -1)
     xy = xy.permute(2, 0, 1)  # 将子孔径维度移到内部
-    # xy = torch.triu(xy) + torch.transpose(torch.conj(torch.tril(xy)), 0, 2)
     xy = torch.triu(xy) + torch.conj(torch.tril(xy)).permute(0, 2, 1)
     dphi = torch.angle(xy)  # 计算相位
     return dphi

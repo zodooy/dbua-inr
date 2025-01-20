@@ -16,6 +16,7 @@ from torch.utils import data
 from utils.inr import Model
 from utils.plot import imagesc, plot_loss
 from scripts.das import das
+import time
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 MAKE_VIDEO = False
@@ -119,7 +120,7 @@ def dbua(sample, loss_name):
 
     # Create a nice figure on first call, update on subsequent calls
     @torch.no_grad()
-    def makeFigure(model, i, cimg, handles=None, pbar=None):
+    def makeFigure(model, i, cimg, handles=None):
         b = makeImage(model)
         if handles is None:
             bmax = torch.max(b)
@@ -165,6 +166,7 @@ def dbua(sample, loss_name):
 
     # Initial survey of losses vs. global sound speed
     c = ASSUMED_C * torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)).to(device)
+    c_normalized = normalize(c)
 
     # Create the optimizer
     xcm, zcm = torch.meshgrid(xc, zc, indexing="ij")
@@ -177,14 +179,14 @@ def dbua(sample, loss_name):
     scheduler1 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer1, T_max=500)
 
     # Initializing Sound Speed
-    with tqdm(range(1000), desc="Initializing Sound Speed", unit="iter") as pbar:
+    with tqdm(range(500), desc="Initializing Sound Speed", unit="iter") as pbar:
         for _ in pbar:
             model.train()
             total_loss = 0
             for batch_coords in dataloader:
                 batch_coords = batch_coords.to(device=device)
                 c_pre = model(batch_coords).reshape(-1, 1)
-                loss_value1 = l1_loss(c_pre, c.reshape(-1, 1)[:c_pre.shape[0]])
+                loss_value1 = l1_loss(c_pre, c_normalized.reshape(-1, 1)[:c_pre.shape[0]])
                 total_loss += loss_value1.item()
                 optimizer1.zero_grad()
                 loss_value1.backward()
@@ -193,9 +195,9 @@ def dbua(sample, loss_name):
             pbar.set_postfix(loss=total_loss / len(dataloader), lr=optimizer1.param_groups[0]["lr"])
 
     print("Initializing First Frame")
-    c_init = model(coords).detach().reshape(SOUND_SPEED_NXC, SOUND_SPEED_NZC)
+    c_init = denormalize(model(coords).detach()).reshape(SOUND_SPEED_NXC, SOUND_SPEED_NZC)
     handles = makeFigure(model, 0, c_init)
-    plt.savefig(f"scratch/{sample}_init.png")
+    plt.savefig(f"scratch/{sample}_init_{time.time()}.png")
     if MAKE_VIDEO:
         vobj.grab_frame()
 
@@ -209,7 +211,7 @@ def dbua(sample, loss_name):
             model.train()
             c_pre = model(coords).reshape(SOUND_SPEED_NXC, SOUND_SPEED_NZC)
 
-            loss_value2 = loss(c_pre, model)
+            loss_value2 = loss(denormalize(c_pre), model)
             pbar.set_postfix(loss=loss_value2.item(), lr=optimizer2.param_groups[0]["lr"])
             l.append(loss_value2.item())
 
@@ -219,12 +221,13 @@ def dbua(sample, loss_name):
             scheduler2.step()
 
             if MAKE_VIDEO:
-                makeFigure(model, i + 1, c_pre.detach(), handles, pbar)
+                makeFigure(model, i + 1, denormalize(c_pre.detach()), handles)
                 vobj.grab_frame()  # Add to video writer
 
     if MAKE_VIDEO: vobj.finish()  # Close video writer
-    makeFigure(model, N_ITERS, c_pre.detach())
-    plt.savefig(f"scratch/{sample}_finish.png")
+    print("Creating Final Frame")
+    makeFigure(model, N_ITERS, denormalize(c_pre.detach()))
+    plt.savefig(f"scratch/{sample}_finish_{time.time()}.png")
     plot_loss(l, sample)
 
 

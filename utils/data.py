@@ -2,7 +2,7 @@ from pathlib import Path
 from hdf5storage import loadmat
 from torch.utils import data
 
-N_ITERS = 100
+N_ITERS = 150
 LEARNING_RATE = 0.1
 ASSUMED_C = 1540  # [m/s]
 
@@ -64,7 +64,7 @@ LOSS = "pe"
 # - checker2
 # - checker8
 
-SAMPLE = "inclusion"
+SAMPLE = "inclusion_layer"
 
 CTRUE = {
     "1420": 1420,
@@ -84,6 +84,12 @@ CTRUE = {
 
 # Refocused plane wave datasets from base dataset directory
 DATA_DIR = Path("./data")
+
+def normalize(c):
+    return (c - SOUND_SPEED_MIN) / (SOUND_SPEED_MAX - SOUND_SPEED_MIN)
+
+def denormalize(c):
+    return c * (SOUND_SPEED_MAX - SOUND_SPEED_MIN) + SOUND_SPEED_MIN
 
 def load_dataset(sample):
     mdict = loadmat(f"{DATA_DIR}/{sample}.mat")
