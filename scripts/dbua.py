@@ -20,7 +20,7 @@ import time
 device = "cuda" if torch.cuda.is_available() else "cpu"
 MAKE_VIDEO = False
 
-def dbua(sample, loss_name):
+def dbua(sample, loss_name, c_init_assumed):
     # Get IQ data, time zeros, sampling and demodulation frequency, and element positions
     iqdata, t0, fs, fd, elpos, _, _ = load_dataset(sample)
     xe, _, ze = np.array(elpos)
@@ -164,7 +164,8 @@ def dbua(sample, loss_name):
         plt.savefig(f"scratch/{sample}.png")
 
     # Initial survey of losses vs. global sound speed
-    c = ASSUMED_C * torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)).to(device)
+    if c_init_assumed == 0: c_init_assumed = ASSUMED_C
+    c = c_init_assumed * torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)).to(device)
     c_normalized = normalize(c)
 
     # Create the optimizer
