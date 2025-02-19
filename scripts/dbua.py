@@ -18,7 +18,12 @@ from scripts.das import das
 import time
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-MAKE_VIDEO = False
+
+SEED = 42
+torch.manual_seed(SEED)
+torch.cuda.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+
 
 def dbua(sample, loss_name, c_init_assumed):
     # Get IQ data, time zeros, sampling and demodulation frequency, and element positions
@@ -80,8 +85,27 @@ def dbua(sample, loss_name, c_init_assumed):
     lc_loss = lambda model: 1 - torch.mean(loss_wrapper(lag_one_coherence, model))
     cf_loss = lambda model: 1 - torch.mean(loss_wrapper(coherence_factor, model))
 
-    def pe_loss(model):
-        t = tof_patch(model)
+    def pe_loss(model, z_max = PHASE_ERROR_X_MAX):
+        # Uniform patching
+        xpc = torch.linspace(PHASE_ERROR_X_MIN, PHASE_ERROR_X_MAX, NXP, device=device)
+        zpc = torch.linspace(PHASE_ERROR_Z_MIN, z_max, NZP, device=device)
+        dxpc, dzpc = xpc[1] - xpc[0] - (NXK - 1) * wl0 / 2, zpc[1] - zpc[0] - (NZK - 1) * wl0 / 2
+        xpc, zpc = torch.meshgrid(xpc, zpc, indexing="ij")
+
+        if RANDOM_PATCHING:  # Random patching
+            minval = torch.tensor([-dxpc / 2, -dzpc / 2])
+            maxval = torch.tensor([+dxpc / 2, +dzpc / 2])
+            offsets = torch.rand(N_PATCHES, 2) * (maxval - minval) + minval
+            offsets = offsets.to(device)
+            xpc = xpc.flatten() + offsets[:, 0]
+            zpc = zpc.flatten() + offsets[:, 1]
+
+        xpp = xpc.reshape(1, -1, 1) + xk.reshape(1, 1, -1)
+        zpp = zpc.reshape(1, -1, 1) + xk.reshape(1, 1, -1)
+        xpp = xpp + 0 * zpp  # Manual broadcasting
+        zpp = zpp + 0 * xpp  # Manual broadcasting
+
+        t = time_of_flight(xe, ze, xpp, zpp, model, fnum=0.5, npts=NPTS_PATCH, Dmin=3e-3, mode=0)
         dphi = phase_error(iqdata, t - t0, t, fs, fd)
         valid = dphi != 0
         dphi = torch.where(valid, dphi, torch.nan)
@@ -89,7 +113,7 @@ def dbua(sample, loss_name, c_init_assumed):
 
     tv = lambda c: total_variation(c) * dxc * dzc
 
-    def loss(c, model):
+    def loss(c, model, z_max):
         if loss_name == "sb":  # Speckle brightness
             return sb_loss(model) + tv(c) * LAMBDA_TV
         elif loss_name == "lc":  # Lag one coherence
@@ -97,7 +121,7 @@ def dbua(sample, loss_name, c_init_assumed):
         elif loss_name == "cf":  # Coherence factor
             return cf_loss(model) + tv(c) * LAMBDA_TV
         elif loss_name == "pe":  # Phase error
-            return pe_loss(model) + tv(c) * LAMBDA_TV
+            return pe_loss(model, z_max) + tv(c) * LAMBDA_TV
         else:
             assert False
 
@@ -194,10 +218,13 @@ def dbua(sample, loss_name, c_init_assumed):
             scheduler1.step()
             pbar.set_postfix(loss=total_loss / len(dataloader), lr=optimizer1.param_groups[0]["lr"])
 
-    print("Initializing First Frame")
     c_init = denormalize(model(coords).detach()).reshape(SOUND_SPEED_NXC, SOUND_SPEED_NZC)
-    handles = makeFigure(model, 0, c_init)
-    plt.savefig(f"scratch/{sample}_init_{time.time()}.png")
+
+    if MAKE_FIGURE:
+        print("Initializing First Frame")
+        handles = makeFigure(model, 0, c_init)
+        plt.savefig(f"scratch/{sample}_init_{time.time()}.png")
+
     if MAKE_VIDEO:
         vobj.grab_frame()
 
@@ -208,10 +235,15 @@ def dbua(sample, loss_name, c_init_assumed):
     # Optimization Loop
     with tqdm(range(N_ITERS), desc="Optimization Loop", unit="iter") as pbar:
         for i in pbar:
+            z_max = PHASE_ERROR_Z_MIN + (PHASE_ERROR_Z_MAX - PHASE_ERROR_Z_MIN) \
+                    * np.clip(round(i / (N_ITERS * 0.8) / 0.125) * 0.125, 0.2,
+                              1.0) if Z_GROWING else PHASE_ERROR_Z_MAX
+            # print(z_max)
+
             model.train()
             c_pre = model(coords).reshape(SOUND_SPEED_NXC, SOUND_SPEED_NZC)
 
-            loss_value2 = loss(denormalize(c_pre), model)
+            loss_value2 = loss(denormalize(c_pre), model, z_max)
             pbar.set_postfix(loss=loss_value2.item(), lr=optimizer2.param_groups[0]["lr"])
             l.append(loss_value2.item())
 
@@ -225,7 +257,10 @@ def dbua(sample, loss_name, c_init_assumed):
                 vobj.grab_frame()  # Add to video writer
 
     if MAKE_VIDEO: vobj.finish()  # Close video writer
-    print("Creating Final Frame")
-    makeFigure(model, N_ITERS, denormalize(c_pre.detach()))
-    plt.savefig(f"scratch/{sample}_finish_{time.time()}.png")
+
+    if MAKE_FIGURE:
+        print("Creating Final Frame")
+        makeFigure(model, N_ITERS, denormalize(c_pre.detach()))
+        plt.savefig(f"scratch/{sample}_finish_{time.time()}.png")
+
     plot_loss(l, sample)
