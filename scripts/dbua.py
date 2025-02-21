@@ -228,7 +228,7 @@ def dbua(sample, loss_name, c_init_assumed):
     if MAKE_VIDEO:
         vobj.grab_frame()
 
-    optimizer2 = torch.optim.Adam(params=model.parameters(), lr=0.001, amsgrad=True)
+    optimizer2 = torch.optim.Adam(params=model.parameters(), lr=0.005, amsgrad=True)
     scheduler2 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer2, T_max=200)
     l = list()
 
@@ -238,7 +238,6 @@ def dbua(sample, loss_name, c_init_assumed):
             z_max = PHASE_ERROR_Z_MIN + (PHASE_ERROR_Z_MAX - PHASE_ERROR_Z_MIN) \
                     * np.clip(round(i / (N_ITERS * 0.8) / 0.125) * 0.125, 0.2,
                               1.0) if Z_GROWING else PHASE_ERROR_Z_MAX
-            # print(z_max)
 
             model.train()
             c_pre = model(coords).reshape(SOUND_SPEED_NXC, SOUND_SPEED_NZC)
