@@ -1,5 +1,4 @@
 commentjson==0.9.0
-tinycudann==1.7
 torch==2.6.0+cu126
 hdf5storage==0.1.19
 matplotlib==3.10.0
