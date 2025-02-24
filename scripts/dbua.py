@@ -26,6 +26,9 @@ torch.cuda.manual_seed_all(SEED)
 
 
 def dbua(sample, loss_name, c_init_assumed):
+
+    name = getName(sample, loss_name, N_ITERS, Z_GROWING, RANDOM_PATCHING)
+
     # Get IQ data, time zeros, sampling and demodulation frequency, and element positions
     iqdata, t0, fs, fd, elpos, _, _ = load_dataset(sample)
     xe, _, ze = np.array(elpos)
@@ -85,7 +88,7 @@ def dbua(sample, loss_name, c_init_assumed):
     lc_loss = lambda model: 1 - torch.mean(loss_wrapper(lag_one_coherence, model))
     cf_loss = lambda model: 1 - torch.mean(loss_wrapper(coherence_factor, model))
 
-    def pe_loss(model, z_max = PHASE_ERROR_X_MAX):
+    def pe_loss(model, z_max = PHASE_ERROR_Z_MAX):
         # Uniform patching
         xpc = torch.linspace(PHASE_ERROR_X_MIN, PHASE_ERROR_X_MAX, NXP, device=device)
         zpc = torch.linspace(PHASE_ERROR_Z_MIN, z_max, NZP, device=device)
@@ -154,13 +157,14 @@ def dbua(sample, loss_name, c_init_assumed):
         bimg = 20 * torch.log10(bimg)
         bimg = torch.reshape(bimg, (nxi, nzi)).T
         cimg = torch.reshape(cimg, (SOUND_SPEED_NXC, SOUND_SPEED_NZC)).T
-        losses = (pe_loss(model).item(), tv(c).item() * LAMBDA_TV)
+        losses = (sb_loss(model).item(), cf_loss(model).item(),
+                  pe_loss(model).item(), tv(c).item() * LAMBDA_TV)
         if handles is None:
             # On the first time, create the figure
             fig.clf()
             plt.subplot(121)
             hbi = imagesc(ximm.cpu(), zimm.cpu(), bimg.cpu(), bdr, cmap="gray", interpolation="bicubic")
-            hbt = plt.title("PE: %.3f, TV: %.3f" % losses)
+            hbt = plt.title("SB: %.2f, CF: %.3f, PE: %.3f, TV:%.3f" % losses)
 
             plt.xlim(ximm[0].cpu(), ximm[-1].cpu())
             plt.ylim(zimm[-1].cpu(), zimm[0].cpu())
@@ -178,14 +182,13 @@ def dbua(sample, loss_name, c_init_assumed):
         else:
             hbi.set_data(bimg.cpu())
             hci.set_data(cimg.cpu())
-            hbt.set_text("PE: %.3f, TV: %.3f" % losses)
+            hbt.set_text("SB: %.2f, CF: %.3f, PE: %.3f, TV:%.3f" % losses)
             if CTRUE[sample] > 0:
                 hct.set_text("Iteration %d: MAE %.2f" % (i, torch.mean(torch.abs(cimg - CTRUE[sample]))))
             else:
                 hct.set_text("Iteration %d: Mean value %.2f" % (i, torch.mean(cimg)))
 
-        # if pbar: pbar.set_postfix(sb=losses[0], cf=losses[1], pe=losses[2], tv=losses[3])
-        plt.savefig(f"scratch/{sample}.png")
+        plt.savefig(f"scratch/{name}.png")
 
     # Initial survey of losses vs. global sound speed
     if c_init_assumed == 0: c_init_assumed = ASSUMED_C
@@ -223,7 +226,7 @@ def dbua(sample, loss_name, c_init_assumed):
     if MAKE_FIGURE:
         print("Initializing First Frame")
         handles = makeFigure(model, 0, c_init)
-        plt.savefig(f"scratch/{sample}_init_{time.time()}.png")
+        plt.savefig(f"scratch/{name}_init_{time.time()}.png")
 
     if MAKE_VIDEO:
         vobj.grab_frame()
@@ -243,7 +246,8 @@ def dbua(sample, loss_name, c_init_assumed):
             c_pre = model(coords).reshape(SOUND_SPEED_NXC, SOUND_SPEED_NZC)
 
             loss_value2 = loss(denormalize(c_pre), model, z_max)
-            pbar.set_postfix(loss=loss_value2.item(), lr=optimizer2.param_groups[0]["lr"])
+            pbar.set_postfix(loss=loss_value2.item(), lr=optimizer2.param_groups[0]["lr"],
+                             zmax=z_max)
             l.append(loss_value2.item())
 
             optimizer2.zero_grad()
@@ -256,10 +260,9 @@ def dbua(sample, loss_name, c_init_assumed):
                 vobj.grab_frame()  # Add to video writer
 
     if MAKE_VIDEO: vobj.finish()  # Close video writer
-
     if MAKE_FIGURE:
         print("Creating Final Frame")
         makeFigure(model, N_ITERS, denormalize(c_pre.detach()))
-        plt.savefig(f"scratch/{sample}_finish_{time.time()}.png")
+        plt.savefig(f"scratch/{name}_finish_{time.time()}.png")
 
     plot_loss(l, sample)

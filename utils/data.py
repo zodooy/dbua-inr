@@ -6,15 +6,15 @@ MAKE_VIDEO = False
 MAKE_FIGURE = True
 OPTIMIZE_GLOBAL_SOS = False
 
-Z_GROWING = False
+Z_GROWING = True
 RANDOM_PATCHING = True
 
 N_ITERS = 300
-LEARNING_RATE = 0.5
+LEARNING_RATE = 0.1
 ASSUMED_C = 1540  # [m/s]
 
 NPTS_IMAGE = 64
-NPTS_PATCH = 64
+NPTS_PATCH = 20
 
 # B-mode limits in m
 BMODE_X_MIN = -12e-3
@@ -35,18 +35,13 @@ SOUND_SPEED_MIN = 1400
 LAMBDA_TV = 1e2
 
 NXK, NZK = 5, 5 # Phase estimate kernel size in samples
-NXP, NZP = 15, 15 # Phase estimate patch grid size in samples
+NXP, NZP = 10, 10# Phase estimate patch grid size in samples
 N_PATCHES = NXP * NZP
 
 PHASE_ERROR_X_MIN = -20e-3
 PHASE_ERROR_X_MAX = 20e-3
 PHASE_ERROR_Z_MIN = 4e-3
 PHASE_ERROR_Z_MAX = 44e-3
-
-# PHASE_ERROR_X_MIN = -20e-3
-# PHASE_ERROR_X_MAX = 20e-3
-# PHASE_ERROR_Z_MIN = 4e-3
-# PHASE_ERROR_Z_MAX = 44e-3
 
 # Loss options
 # -"pe" for phase error
@@ -91,6 +86,22 @@ CTRUE = {
     "checker8": 0
 }
 
+CINIT = {
+    "1420": 1420,
+    "1465": 1465,
+    "1480": 1480,
+    "1510": 1510,
+    "1540": 1540,
+    "1555": 1555,
+    "1570": 1570,
+    "inclusion": 1540,
+    "inclusion_layer": 1540,
+    "four_layer": 1480,
+    "two_layer": 1480,
+    "checker2": 1500,
+    "checker8": 1500
+}
+
 # Refocused plane wave datasets from base dataset directory
 DATA_DIR = Path("./data")
 
@@ -110,6 +121,14 @@ def load_dataset(sample):
     t0 = mdict["t0"]  # time zero of transmit
     elpos = mdict["elpos"]  # element position
     return iqdata, t0, fs, fd, elpos, dsf, t
+
+def getName(sample, loss, iter, withZG, withRP):
+    ZG, RP = None, None
+    if withZG:
+        ZG = "ZG"
+    if withRP:
+        RP = "RP"
+    return f"{sample}_{loss}_{iter}_{ZG}_{RP}"
 
 # Custom Dataset for coordinates
 class CoordDataset(data.Dataset):
